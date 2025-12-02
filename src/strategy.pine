@@ -41,11 +41,11 @@ validated_max_ticks = math.max(i_min_tick_distance, i_max_tick_distance)
 // STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
-var int wait_end_time_ms = na
+var int next_entry_time_ms = na
 var int active_tick_distance = na
-var bool was_in_position = false
-var bool entry_submitted = false
 var string last_direction = "None"
+
+const int LOCKED_FUTURE_MS = 32503680000000
 
 // Returns the next time (in ms) when entries are allowed
 next_wait_end(time_ms) =>
@@ -53,13 +53,12 @@ next_wait_end(time_ms) =>
     wait_minutes := math.max(validated_min_wait, math.min(wait_minutes, validated_max_wait))
     time_ms + wait_minutes * 60 * 1000
 
-trade_finished = strategy.closedtrades > strategy.closedtrades[1]
+trade_finished = strategy.closedtrades > nz(strategy.closedtrades[1], 0)
 
 // Initialize or reschedule the waiting window when starting up or after a trade fully closes
 if barstate.isfirst or trade_finished
-    wait_end_time_ms := next_wait_end(time)
+    next_entry_time_ms := next_wait_end(time)
     active_tick_distance := na
-    entry_submitted := false
     last_direction := "None"
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -67,8 +66,10 @@ if barstate.isfirst or trade_finished
 // ══════════════════════════════════════════════════════════════════════════════
 
 can_trade = i_allow_long or i_allow_short
-cooldown_done = not na(wait_end_time_ms) and time >= wait_end_time_ms
-ready_for_entry = strategy.position_size == 0 and cooldown_done and can_trade and not entry_submitted
+is_flat = strategy.position_size == 0
+locked_window = not na(next_entry_time_ms) and next_entry_time_ms == LOCKED_FUTURE_MS
+cooldown_done = not na(next_entry_time_ms) and not locked_window and time >= next_entry_time_ms
+ready_for_entry = is_flat and cooldown_done and can_trade
 
 if ready_for_entry
     // Choose random tick distance for the 1:1 stop/limit
@@ -82,9 +83,8 @@ if ready_for_entry
     entry_id = is_long ? "Random Long" : "Random Short"
     last_direction := entry_id
     strategy.entry(entry_id, is_long ? strategy.long : strategy.short)
-    entry_submitted := true
     // Prevent additional entries until the current trade completes
-    wait_end_time_ms := na
+    next_entry_time_ms := LOCKED_FUTURE_MS
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EXIT LOGIC
@@ -107,20 +107,10 @@ if short_active and not na(active_tick_distance)
 // RESET AFTER EXIT
 // ══════════════════════════════════════════════════════════════════════════════
 
-if was_in_position and strategy.position_size == 0 and not trade_finished
-    // Capture edge case where a position closed intrabar without incrementing closed trades yet
-    wait_end_time_ms := next_wait_end(time)
+if trade_finished or (is_flat and next_entry_time_ms == LOCKED_FUTURE_MS)
+    // Closed trade count advanced or flat after a locked window; clear state and schedule the next window
+    next_entry_time_ms := next_wait_end(time)
     active_tick_distance := na
-    entry_submitted := false
-
-if trade_finished
-    // Closed trade count advanced; clear state and schedule the next window
-    wait_end_time_ms := next_wait_end(time)
-    active_tick_distance := na
-    entry_submitted := false
-
-was_in_position := strategy.position_size != 0
-entry_submitted := entry_submitted and strategy.position_size == 0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PLOTTING (minimal for clarity)
@@ -134,22 +124,22 @@ plotshape(ready_for_entry, title="Entry Ready", text="Ready", style=shape.triang
 
 var table debug_table = table.new(position.top_right, 1, 1, frame_color=color.new(color.silver, 70), border_width=1)
 
-wait_remaining_min = na(wait_end_time_ms) ? na : (wait_end_time_ms - time) / 60000.0
-wait_text = na(wait_remaining_min) ? "n/a" : wait_remaining_min > 0 ? str.tostring(math.round(wait_remaining_min, 2)) + " min" : "Elapsed"
+wait_remaining_min = na(next_entry_time_ms) or locked_window ? na : (next_entry_time_ms - time) / 60000.0
+wait_text = locked_window ? "Locked (trade open)" : na(wait_remaining_min) ? "n/a" : wait_remaining_min > 0 ? str.tostring(math.round(wait_remaining_min, 2)) + " min" : "Elapsed"
 close_vs_stop_text = long_active ? str.tostring(close > strategy.position_avg_price) : short_active ? str.tostring(close < strategy.position_avg_price) : "n/a"
 ticks_to_stop = not na(active_tick_distance) and long_active ? (close - (strategy.position_avg_price - active_tick_distance * syminfo.mintick)) / syminfo.mintick :
   not na(active_tick_distance) and short_active ? ((strategy.position_avg_price + active_tick_distance * syminfo.mintick) - close) / syminfo.mintick :
   na
 live_tick_text = na(ticks_to_stop) ? "n/a" : str.tostring(math.round(ticks_to_stop, 2))
 
-debug_text = str.format("Random Wait RR 1:1\nReady: {0}\nEntry Submitted: {1}\nIn Position: {2}\nCooldown Done: {3}\nDirection: {4}\nActive Tick Dist: {5}\nWait Ends: {6}\nCan Trade: {7}\nClose > Stop?: {8}\nTicks To Stop: {9}",
+debug_text = str.format("Random Wait RR 1:1\nReady: {0}\nFlat: {1}\nCooldown Done: {2}\nLocked Window: {3}\nDirection: {4}\nActive Tick Dist: {5}\nWait Ends: {6}\nCan Trade: {7}\nClose > Stop?: {8}\nTicks To Stop: {9}",
   ready_for_entry,
-  entry_submitted,
-  was_in_position,
+  is_flat,
   cooldown_done,
+  locked_window,
   last_direction,
   na(active_tick_distance) ? "n/a" : str.tostring(active_tick_distance),
-  na(wait_end_time_ms) ? "n/a" : wait_text,
+  wait_text,
   can_trade,
   close_vs_stop_text,
   live_tick_text)
