@@ -1,5 +1,7 @@
 # TradingView Strategy
 
+> **🤖 For LLMs and Agents:** Please review [AGENTS.md](AGENTS.md) before making any changes to this repository.
+
 A TradingView strategy/indicator project built with Pine Script v6.
 
 > This is a strategy that begins as a randomizer then improves from there.
