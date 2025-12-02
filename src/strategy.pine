@@ -47,10 +47,6 @@ var bool entry_submitted = false
 var bool was_in_position = false
 var string last_direction = "None"
 
-// Seed the RNG once so math.random behaves deterministically for a given chart load
-if barstate.isfirst
-    math.random.seed(time)
-
 // Returns the next time (in ms) when entries are allowed
 next_wait_end(time_ms) =>
     wait_minutes = math.round(math.random(validated_min_wait, validated_max_wait))
@@ -124,15 +120,16 @@ var table debug_table = table.new(position.top_right, 1, 1, frame_color=color.ne
 
 wait_remaining_min = na(wait_end_time_ms) ? na : (wait_end_time_ms - time) / 60000.0
 wait_text = na(wait_remaining_min) ? "n/a" : wait_remaining_min > 0 ? str.tostring(math.round(wait_remaining_min, 2)) + " min" : "Elapsed"
+close_vs_stop_text = long_active ? str.tostring(close > strategy.position_avg_price) : short_active ? str.tostring(close < strategy.position_avg_price) : "n/a"
 
 debug_text = str.format("Random Wait RR 1:1\nReady: {0}\nIn Position: {1}\nEntry Submitted: {2}\nDirection: {3}\nActive Tick Dist: {4}\nWait Ends: {5}\nCan Trade: {6}\nClose > Stop?: {7}",
-    ready_for_entry,
-    was_in_position,
-    entry_submitted,
-    last_direction,
-    na(active_tick_distance) ? "n/a" : str.tostring(active_tick_distance),
-    na(wait_end_time_ms) ? "n/a" : wait_text,
-    can_trade,
-    long_active ? close > strategy.position_avg_price : short_active ? close < strategy.position_avg_price : "n/a")
+  ready_for_entry,
+  was_in_position,
+  entry_submitted,
+  last_direction,
+  na(active_tick_distance) ? "n/a" : str.tostring(active_tick_distance),
+  na(wait_end_time_ms) ? "n/a" : wait_text,
+  can_trade,
+  close_vs_stop_text)
 
 table.cell(debug_table, 0, 0, debug_text, text_size=size.tiny, text_color=color.white, bgcolor=color.new(color.black, 65))
