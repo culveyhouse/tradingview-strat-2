@@ -43,7 +43,6 @@ validated_max_ticks = math.max(i_min_tick_distance, i_max_tick_distance)
 
 var int wait_end_time_ms = na
 var int active_tick_distance = na
-var bool entry_submitted = false
 var bool was_in_position = false
 var string last_direction = "None"
 
@@ -62,7 +61,8 @@ if na(wait_end_time_ms)
 // ══════════════════════════════════════════════════════════════════════════════
 
 can_trade = i_allow_long or i_allow_short
-ready_for_entry = strategy.position_size == 0 and not entry_submitted and can_trade and time >= wait_end_time_ms
+cooldown_done = not na(wait_end_time_ms) and time >= wait_end_time_ms
+ready_for_entry = strategy.position_size == 0 and cooldown_done and can_trade
 
 if ready_for_entry
     // Choose random tick distance for the 1:1 stop/limit
@@ -76,7 +76,6 @@ if ready_for_entry
     entry_id = is_long ? "Random Long" : "Random Short"
     last_direction := entry_id
     strategy.entry(entry_id, is_long ? strategy.long : strategy.short)
-    entry_submitted := true
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EXIT LOGIC
@@ -101,7 +100,6 @@ if short_active and not na(active_tick_distance)
 
 if was_in_position and strategy.position_size == 0
     active_tick_distance := na
-    entry_submitted := false
     wait_end_time_ms := next_wait_end(time)
 
 was_in_position := strategy.position_size != 0
@@ -126,10 +124,10 @@ ticks_to_stop = not na(active_tick_distance) and long_active ? (close - (strateg
   na
 live_tick_text = na(ticks_to_stop) ? "n/a" : str.tostring(math.round(ticks_to_stop, 2))
 
-debug_text = str.format("Random Wait RR 1:1\nReady: {0}\nIn Position: {1}\nEntry Submitted: {2}\nDirection: {3}\nActive Tick Dist: {4}\nWait Ends: {5}\nCan Trade: {6}\nClose > Stop?: {7}\nTicks To Stop: {8}",
+debug_text = str.format("Random Wait RR 1:1\nReady: {0}\nIn Position: {1}\nCooldown Done: {2}\nDirection: {3}\nActive Tick Dist: {4}\nWait Ends: {5}\nCan Trade: {6}\nClose > Stop?: {7}\nTicks To Stop: {8}",
   ready_for_entry,
   was_in_position,
-  entry_submitted,
+  cooldown_done,
   last_direction,
   na(active_tick_distance) ? "n/a" : str.tostring(active_tick_distance),
   na(wait_end_time_ms) ? "n/a" : wait_text,
