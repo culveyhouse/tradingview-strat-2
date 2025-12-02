@@ -27,15 +27,27 @@ max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 // ══════════════════════════════════════════════════════════════════════════════
 
 var int active_ticks = na
-var int bars_without_position = 0
+var int wait_bars_target = 0
+var int bars_waited_flat = 0
+var bool was_in_position = false
 is_flat = strategy.position_size == 0
+just_exited = was_in_position and is_flat
 
-// Reset active trade settings when flat so a fresh draw happens on next entry.
+// When a position closes, draw a random flat-period length before the next entry.
+if just_exited
+    wait_bars_target := math.round(rand_between(1.0, 61.0, bar_index + 101))
+    wait_bars_target := math.max(wait_bars_target, 1)
+    bars_waited_flat := 0
+
+// Reset active trade settings when flat so a fresh draw happens on next entry, and count flat bars.
 if is_flat
     active_ticks := na
-    bars_without_position += 1
+    bars_waited_flat := just_exited ? 0 : bars_waited_flat + 1
 else
-    bars_without_position := 0
+    bars_waited_flat := 0
+
+// Track last known position state for exit detection.
+was_in_position := not is_flat
 
 // ══════════════════════════════════════════════════════════════════════════════
 // RANDOM HELPERS
@@ -59,9 +71,8 @@ rand_ticks = math.round(rand_ticks_raw)
 // Guarantee at least one attempt on the first visible bar so the strategy produces trades even on short chart windows.
 should_try_entry = rand_float(rand_seed_chance) < probability_per_bar or probability_per_bar >= 1.0
 force_first_entry = barstate.isfirst
-// If a flat run persists, force an entry so the backtest never stalls with zero trades.
-force_after_dry_spell = bars_without_position >= 5
-should_enter = is_flat and not na(rand_ticks) and (should_try_entry or force_first_entry or force_after_dry_spell)
+waiting_finished = bars_waited_flat >= wait_bars_target
+should_enter = is_flat and waiting_finished and not na(rand_ticks) and (should_try_entry or force_first_entry)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRY LOGIC
