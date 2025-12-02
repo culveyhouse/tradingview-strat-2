@@ -27,7 +27,9 @@ max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 // ══════════════════════════════════════════════════════════════════════════════
 
 // Pseudo-random number generator based on bar_index for reproducibility.
-rand_float(src) => math.fract(math.sin(src) * 43758.5453)
+rand_float(src) =>
+    raw = math.sin(src) * 43758.5453
+    raw - math.floor(raw)
 rand_between(min_val, max_val, src) => min_val + rand_float(src) * (max_val - min_val)
 
 // Sources for random draws per bar.
