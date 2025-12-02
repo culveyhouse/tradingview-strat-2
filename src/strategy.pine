@@ -53,9 +53,14 @@ next_wait_end(time_ms) =>
     wait_minutes := math.max(validated_min_wait, math.min(wait_minutes, validated_max_wait))
     time_ms + wait_minutes * 60 * 1000
 
-// Initialize the first waiting window
-if na(wait_end_time_ms)
+trade_finished = strategy.closedtrades > strategy.closedtrades[1]
+
+// Initialize or reschedule the waiting window when starting up or after a trade fully closes
+if barstate.isfirst or trade_finished
     wait_end_time_ms := next_wait_end(time)
+    active_tick_distance := na
+    entry_submitted := false
+    last_direction := "None"
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRY LOGIC
@@ -78,6 +83,8 @@ if ready_for_entry
     last_direction := entry_id
     strategy.entry(entry_id, is_long ? strategy.long : strategy.short)
     entry_submitted := true
+    // Prevent additional entries until the current trade completes
+    wait_end_time_ms := na
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EXIT LOGIC
@@ -100,9 +107,16 @@ if short_active and not na(active_tick_distance)
 // RESET AFTER EXIT
 // ══════════════════════════════════════════════════════════════════════════════
 
-if was_in_position and strategy.position_size == 0
-    active_tick_distance := na
+if was_in_position and strategy.position_size == 0 and not trade_finished
+    // Capture edge case where a position closed intrabar without incrementing closed trades yet
     wait_end_time_ms := next_wait_end(time)
+    active_tick_distance := na
+    entry_submitted := false
+
+if trade_finished
+    // Closed trade count advanced; clear state and schedule the next window
+    wait_end_time_ms := next_wait_end(time)
+    active_tick_distance := na
     entry_submitted := false
 
 was_in_position := strategy.position_size != 0
