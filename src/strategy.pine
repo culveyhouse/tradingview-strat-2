@@ -23,6 +23,17 @@ min_ticks_clean = math.max(1, min_ticks)
 max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 
 // ══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════════════════
+
+var int active_ticks = na
+is_flat = strategy.position_size == 0
+
+// Reset active trade settings when flat so a fresh draw happens on next entry.
+if is_flat
+    active_ticks := na
+
+// ══════════════════════════════════════════════════════════════════════════════
 // RANDOM HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -45,17 +56,6 @@ rand_ticks = math.round(rand_ticks_raw)
 should_try_entry = rand_float(rand_seed_chance) <= probability_per_bar
 force_first_entry = barstate.isfirst and is_flat
 should_enter = (should_try_entry or force_first_entry) and is_flat and not na(rand_ticks)
-
-// ══════════════════════════════════════════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════════════════════════════════════════
-
-var int active_ticks = na
-is_flat = strategy.position_size == 0
-
-// Reset active trade settings when flat so a fresh draw happens on next entry.
-if is_flat
-    active_ticks := na
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRY LOGIC
