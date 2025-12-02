@@ -23,6 +23,16 @@ min_ticks_clean = math.max(1, min_ticks)
 max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 
 // ══════════════════════════════════════════════════════════════════════════════
+// RANDOM HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Pseudo-random number generator based on bar_index for reproducibility.
+rand_float(src) =>
+    raw = math.sin(src) * 43758.5453
+    raw - math.floor(raw)
+rand_between(min_val, max_val, src) => min_val + rand_float(src) * (max_val - min_val)
+
+// ══════════════════════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -48,16 +58,6 @@ else
 
 // Track last known position state for exit detection.
 was_in_position := not is_flat
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RANDOM HELPERS
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Pseudo-random number generator based on bar_index for reproducibility.
-rand_float(src) =>
-    raw = math.sin(src) * 43758.5453
-    raw - math.floor(raw)
-rand_between(min_val, max_val, src) => min_val + rand_float(src) * (max_val - min_val)
 
 // Sources for random draws per bar.
 rand_seed_dir = bar_index + 1
