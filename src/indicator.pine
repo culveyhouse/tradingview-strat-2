@@ -1,0 +1,26 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © tradingview-strat-2
+
+//@version=6
+indicator("My Indicator", overlay=true)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+i_length = input.int(14, "Length", minval=1, group="Indicator Settings")
+i_source = input.source(close, "Source", group="Indicator Settings")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+
+smaValue = ta.sma(i_source, i_length)
+emaValue = ta.ema(i_source, i_length)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLOTTING
+// ══════════════════════════════════════════════════════════════════════════════
+
+plot(smaValue, "SMA", color=color.blue, linewidth=2)
+plot(emaValue, "EMA", color=color.orange, linewidth=2)
