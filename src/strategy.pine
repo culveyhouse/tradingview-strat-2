@@ -2,7 +2,7 @@
 // © tradingview-strat-2
 
 //@version=6
-//@description="Takes one trade at a time after a random wait, flips a coin for direction, and uses a random 1:1 tick stop/limit."
+//@description="Takes one trade at a time after a random wait, flips a coin for direction, and uses a random 1:1 tick stop/limit. Adds debug table for visibility."
 
 strategy("Random Wait RR 1:1",
   overlay=true,
@@ -44,6 +44,12 @@ validated_max_ticks = math.max(i_min_tick_distance, i_max_tick_distance)
 var int wait_end_time_ms = na
 var int active_tick_distance = na
 var bool entry_submitted = false
+var bool was_in_position = false
+var string last_direction = "None"
+
+// Seed the RNG once so math.random behaves deterministically for a given chart load
+if barstate.isfirst
+    math.random.seed(time)
 
 // Returns the next time (in ms) when entries are allowed
 next_wait_end(time_ms) =>
@@ -72,6 +78,7 @@ if ready_for_entry
     is_long = i_allow_long and i_allow_short ? draw_long : i_allow_long
 
     entry_id = is_long ? "Random Long" : "Random Short"
+    last_direction := entry_id
     strategy.entry(entry_id, is_long ? strategy.long : strategy.short)
     entry_submitted := true
 
@@ -96,13 +103,36 @@ if short_active and not na(active_tick_distance)
 // RESET AFTER EXIT
 // ══════════════════════════════════════════════════════════════════════════════
 
-if strategy.position_size == 0 and entry_submitted
+if was_in_position and strategy.position_size == 0
     active_tick_distance := na
     entry_submitted := false
     wait_end_time_ms := next_wait_end(time)
+
+was_in_position := strategy.position_size != 0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PLOTTING (minimal for clarity)
 // ══════════════════════════════════════════════════════════════════════════════
 
 plotshape(ready_for_entry, title="Entry Ready", text="Ready", style=shape.triangleup, location=location.bottom, color=color.new(color.teal, 30), size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DEBUG PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+var table debug_table = table.new(position.top_right, 1, 1, frame_color=color.new(color.silver, 70), border_width=1)
+
+wait_remaining_min = na(wait_end_time_ms) ? na : (wait_end_time_ms - time) / 60000.0
+wait_text = na(wait_remaining_min) ? "n/a" : wait_remaining_min > 0 ? str.tostring(math.round(wait_remaining_min, 2)) + " min" : "Elapsed"
+
+debug_text = str.format("Random Wait RR 1:1\nReady: {0}\nIn Position: {1}\nEntry Submitted: {2}\nDirection: {3}\nActive Tick Dist: {4}\nWait Ends: {5}\nCan Trade: {6}\nClose > Stop?: {7}",
+    ready_for_entry,
+    was_in_position,
+    entry_submitted,
+    last_direction,
+    na(active_tick_distance) ? "n/a" : str.tostring(active_tick_distance),
+    na(wait_end_time_ms) ? "n/a" : wait_text,
+    can_trade,
+    long_active ? close > strategy.position_avg_price : short_active ? close < strategy.position_avg_price : "n/a")
+
+table.cell(debug_table, 0, 0, debug_text, text_size=size.tiny, text_color=color.white, bgcolor=color.new(color.black, 65))
