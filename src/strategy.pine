@@ -27,11 +27,15 @@ max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 // ══════════════════════════════════════════════════════════════════════════════
 
 var int active_ticks = na
+var int bars_without_position = 0
 is_flat = strategy.position_size == 0
 
 // Reset active trade settings when flat so a fresh draw happens on next entry.
 if is_flat
     active_ticks := na
+    bars_without_position += 1
+else
+    bars_without_position := 0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // RANDOM HELPERS
@@ -53,9 +57,11 @@ rand_ticks_raw = rand_between(min_ticks_clean, max_ticks_clean + 1.0, rand_seed_
 rand_ticks = math.round(rand_ticks_raw)
 
 // Guarantee at least one attempt on the first visible bar so the strategy produces trades even on short chart windows.
-should_try_entry = rand_float(rand_seed_chance) <= probability_per_bar
+should_try_entry = rand_float(rand_seed_chance) < probability_per_bar or probability_per_bar >= 1.0
 force_first_entry = barstate.isfirst
-should_enter = is_flat and not na(rand_ticks) and (should_try_entry or force_first_entry)
+// If a flat run persists, force an entry so the backtest never stalls with zero trades.
+force_after_dry_spell = bars_without_position >= 5
+should_enter = is_flat and not na(rand_ticks) and (should_try_entry or force_first_entry or force_after_dry_spell)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRY LOGIC
