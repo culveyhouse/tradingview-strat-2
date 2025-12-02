@@ -2,63 +2,107 @@
 // © tradingview-strat-2
 
 //@version=6
-strategy("My Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+//@description="Takes one trade at a time after a random wait, flips a coin for direction, and uses a random 1:1 tick stop/limit."
+
+strategy("Random Wait RR 1:1",
+  overlay=true,
+  pyramiding=0,
+  initial_capital=10000,
+  default_qty_type=strategy.percent_of_equity,
+  default_qty_value=10,
+  process_orders_on_close=true,
+  commission_type=strategy.commission.percent,
+  commission_value=0.0)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INPUTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Strategy Parameters
-i_enableLong = input.bool(true, "Enable Long Positions", group="Strategy Settings")
-i_enableShort = input.bool(true, "Enable Short Positions", group="Strategy Settings")
+group_timing = "Random Timing"
+group_risk = "Risk Management"
+group_direction = "Direction"
 
-// Indicator Parameters
-i_fastLength = input.int(10, "Fast MA Length", minval=1, group="Indicator Settings")
-i_slowLength = input.int(20, "Slow MA Length", minval=1, group="Indicator Settings")
+i_min_wait_minutes = input.int(5, "Minimum wait (minutes)", minval=1, maxval=240, group=group_timing)
+i_max_wait_minutes = input.int(60, "Maximum wait (minutes)", minval=1, maxval=480, group=group_timing)
 
-// Risk Management
-i_stopLossPerc = input.float(2.0, "Stop Loss %", minval=0.1, step=0.1, group="Risk Management")
-i_takeProfitPerc = input.float(4.0, "Take Profit %", minval=0.1, step=0.1, group="Risk Management")
+i_min_tick_distance = input.int(20, "Minimum tick distance", minval=1, maxval=500, group=group_risk)
+i_max_tick_distance = input.int(50, "Maximum tick distance", minval=1, maxval=500, group=group_risk)
 
-// ══════════════════════════════════════════════════════════════════════════════
-// INDICATORS
-// ══════════════════════════════════════════════════════════════════════════════
+i_allow_long = input.bool(true, "Allow long entries", group=group_direction)
+i_allow_short = input.bool(true, "Allow short entries", group=group_direction)
 
-fastMA = ta.sma(close, i_fastLength)
-slowMA = ta.sma(close, i_slowLength)
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SIGNALS
-// ══════════════════════════════════════════════════════════════════════════════
-
-longCondition = ta.crossover(fastMA, slowMA)
-shortCondition = ta.crossunder(fastMA, slowMA)
+// Ensure ranges remain valid even if the user swaps min/max values
+validated_min_wait = math.min(i_min_wait_minutes, i_max_wait_minutes)
+validated_max_wait = math.max(i_min_wait_minutes, i_max_wait_minutes)
+validated_min_ticks = math.min(i_min_tick_distance, i_max_tick_distance)
+validated_max_ticks = math.max(i_min_tick_distance, i_max_tick_distance)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// STRATEGY EXECUTION
+// STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Entry logic
-if longCondition and i_enableLong
-    strategy.entry("Long", strategy.long)
+var int wait_end_time_ms = na
+var int active_tick_distance = na
+var bool entry_submitted = false
 
-if shortCondition and i_enableShort
-    strategy.entry("Short", strategy.short)
+// Returns the next time (in ms) when entries are allowed
+next_wait_end(time_ms) =>
+    wait_minutes = math.round(math.random(validated_min_wait, validated_max_wait))
+    wait_minutes := math.max(validated_min_wait, math.min(wait_minutes, validated_max_wait))
+    time_ms + wait_minutes * 60 * 1000
 
-// Exit logic - placed outside entry conditions for proper execution
-if strategy.position_size > 0
-    strategy.exit("Long Exit", "Long", stop=close * (1 - i_stopLossPerc/100), limit=close * (1 + i_takeProfitPerc/100))
-
-if strategy.position_size < 0
-    strategy.exit("Short Exit", "Short", stop=close * (1 + i_stopLossPerc/100), limit=close * (1 - i_takeProfitPerc/100))
+// Initialize the first waiting window
+if na(wait_end_time_ms)
+    wait_end_time_ms := next_wait_end(time)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PLOTTING
+// ENTRY LOGIC
 // ══════════════════════════════════════════════════════════════════════════════
 
-plot(fastMA, "Fast MA", color=color.blue, linewidth=2)
-plot(slowMA, "Slow MA", color=color.red, linewidth=2)
+can_trade = i_allow_long or i_allow_short
+ready_for_entry = strategy.position_size == 0 and not entry_submitted and can_trade and time >= wait_end_time_ms
 
-// Plot entry signals
-plotshape(longCondition, "Long Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
-plotshape(shortCondition, "Short Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
+if ready_for_entry
+    // Choose random tick distance for the 1:1 stop/limit
+    active_tick_distance := math.round(math.random(validated_min_ticks, validated_max_ticks))
+    active_tick_distance := math.max(validated_min_ticks, math.min(active_tick_distance, validated_max_ticks))
+
+    // Flip a coin for direction while respecting disabled sides
+    draw_long = math.random(0.0, 1.0) >= 0.5
+    is_long = i_allow_long and i_allow_short ? draw_long : i_allow_long
+
+    entry_id = is_long ? "Random Long" : "Random Short"
+    strategy.entry(entry_id, is_long ? strategy.long : strategy.short)
+    entry_submitted := true
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXIT LOGIC
+// ══════════════════════════════════════════════════════════════════════════════
+
+long_active = strategy.position_size > 0
+short_active = strategy.position_size < 0
+
+if long_active and not na(active_tick_distance)
+    stop_price_long = strategy.position_avg_price - active_tick_distance * syminfo.mintick
+    limit_price_long = strategy.position_avg_price + active_tick_distance * syminfo.mintick
+    strategy.exit("Long Exit", from_entry="Random Long", stop=stop_price_long, limit=limit_price_long)
+
+if short_active and not na(active_tick_distance)
+    stop_price_short = strategy.position_avg_price + active_tick_distance * syminfo.mintick
+    limit_price_short = strategy.position_avg_price - active_tick_distance * syminfo.mintick
+    strategy.exit("Short Exit", from_entry="Random Short", stop=stop_price_short, limit=limit_price_short)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RESET AFTER EXIT
+// ══════════════════════════════════════════════════════════════════════════════
+
+if strategy.position_size == 0 and entry_submitted
+    active_tick_distance := na
+    entry_submitted := false
+    wait_end_time_ms := next_wait_end(time)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLOTTING (minimal for clarity)
+// ══════════════════════════════════════════════════════════════════════════════
+
+plotshape(ready_for_entry, title="Entry Ready", text="Ready", style=shape.triangleup, location=location.bottom, color=color.new(color.teal, 30), size=size.tiny)
