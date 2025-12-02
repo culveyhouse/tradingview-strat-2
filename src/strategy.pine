@@ -45,15 +45,15 @@ var int wait_end_time_ms = na
 var int active_tick_distance = na
 var bool entry_submitted = false
 
-// Schedules the next time window when a trade is allowed
-schedule_next_window() =>
-    wait_minutes = math.round(math.rand(validated_min_wait, validated_max_wait))
+// Returns the next time (in ms) when entries are allowed
+next_wait_end(time_ms) =>
+    wait_minutes = math.round(math.random(validated_min_wait, validated_max_wait))
     wait_minutes := math.max(validated_min_wait, math.min(wait_minutes, validated_max_wait))
-    wait_end_time_ms := time + wait_minutes * 60 * 1000
+    time_ms + wait_minutes * 60 * 1000
 
 // Initialize the first waiting window
 if na(wait_end_time_ms)
-    schedule_next_window()
+    wait_end_time_ms := next_wait_end(time)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRY LOGIC
@@ -64,11 +64,11 @@ ready_for_entry = strategy.position_size == 0 and not entry_submitted and can_tr
 
 if ready_for_entry
     // Choose random tick distance for the 1:1 stop/limit
-    active_tick_distance := math.round(math.rand(validated_min_ticks, validated_max_ticks))
+    active_tick_distance := math.round(math.random(validated_min_ticks, validated_max_ticks))
     active_tick_distance := math.max(validated_min_ticks, math.min(active_tick_distance, validated_max_ticks))
 
     // Flip a coin for direction while respecting disabled sides
-    draw_long = math.rand(0.0, 1.0) >= 0.5
+    draw_long = math.random(0.0, 1.0) >= 0.5
     is_long = i_allow_long and i_allow_short ? draw_long : i_allow_long
 
     entry_id = is_long ? "Random Long" : "Random Short"
@@ -99,7 +99,7 @@ if short_active and not na(active_tick_distance)
 if strategy.position_size == 0 and entry_submitted
     active_tick_distance := na
     entry_submitted := false
-    schedule_next_window()
+    wait_end_time_ms := next_wait_end(time)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PLOTTING (minimal for clarity)
