@@ -4,7 +4,8 @@
 //@version=6
 // A deliberately simple random-entry strategy with 1:1 risk/reward and fixed commissions.
 strategy(
-    "Random 1:1 R:R", 
+    title="Random 1:1 R:R",
+    shorttitle="Random R:R",
     overlay=true,
     initial_capital=10000,
     default_qty_type=strategy.percent_of_equity,
