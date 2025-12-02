@@ -2,63 +2,106 @@
 // © tradingview-strat-2
 
 //@version=6
-strategy("My Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+// A deliberately simple random-entry strategy with 1:1 risk/reward and fixed commissions.
+strategy(
+    "Random 1:1 R:R", 
+    overlay=true,
+    initial_capital=10000,
+    default_qty_type=strategy.percent_of_equity,
+    default_qty_value=100,
+    commission_type=strategy.commission.cash_per_order,
+    commission_value=1.0
+)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INPUTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Strategy Parameters
-i_enableLong = input.bool(true, "Enable Long Positions", group="Strategy Settings")
-i_enableShort = input.bool(true, "Enable Short Positions", group="Strategy Settings")
+// Strategy behavior
+probability_per_bar = input.float(1.0, "Entry Chance (0-1)", minval=0.0, maxval=1.0, step=0.05, tooltip="Chance of opening a trade when flat on any given bar.", group="Strategy Settings")
+enable_long = input.bool(true, "Allow Long Entries", group="Strategy Settings")
+enable_short = input.bool(true, "Allow Short Entries", group="Strategy Settings")
 
-// Indicator Parameters
-i_fastLength = input.int(10, "Fast MA Length", minval=1, group="Indicator Settings")
-i_slowLength = input.int(20, "Slow MA Length", minval=1, group="Indicator Settings")
+// Tick range for both stop loss and take profit (1:1 R:R)
+min_ticks = input.int(20, "Minimum Stop/Limit Ticks", minval=1, group="Risk Settings")
+max_ticks = input.int(50, "Maximum Stop/Limit Ticks", minval=1, group="Risk Settings")
 
-// Risk Management
-i_stopLossPerc = input.float(2.0, "Stop Loss %", minval=0.1, step=0.1, group="Risk Management")
-i_takeProfitPerc = input.float(4.0, "Take Profit %", minval=0.1, step=0.1, group="Risk Management")
-
-// ══════════════════════════════════════════════════════════════════════════════
-// INDICATORS
-// ══════════════════════════════════════════════════════════════════════════════
-
-fastMA = ta.sma(close, i_fastLength)
-slowMA = ta.sma(close, i_slowLength)
+// Sanitize ranges to avoid invalid inputs.
+min_ticks_clean = math.max(1, min_ticks)
+max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SIGNALS
+// RANDOM HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
-longCondition = ta.crossover(fastMA, slowMA)
-shortCondition = ta.crossunder(fastMA, slowMA)
+// Pseudo-random number generator based on bar_index for reproducibility.
+rand_float(src) => math.frac(math.sin(src) * 43758.5453)
+rand_between(min_val, max_val, src) => min_val + rand_float(src) * (max_val - min_val)
+
+// Sources for random draws per bar.
+rand_seed_dir = bar_index + 1
+rand_seed_ticks = bar_index + 7
+rand_seed_chance = bar_index + 13
+
+rand_dir_long = rand_float(rand_seed_dir) >= 0.5
+rand_ticks_raw = rand_between(min_ticks_clean, max_ticks_clean + 1.0, rand_seed_ticks)
+rand_ticks = math.round(rand_ticks_raw)
+should_try_entry = rand_float(rand_seed_chance) <= probability_per_bar
 
 // ══════════════════════════════════════════════════════════════════════════════
-// STRATEGY EXECUTION
+// STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Entry logic
-if longCondition and i_enableLong
-    strategy.entry("Long", strategy.long)
+var int active_ticks = na
+is_flat = strategy.position_size == 0
 
-if shortCondition and i_enableShort
-    strategy.entry("Short", strategy.short)
+// Reset active trade settings when flat so a fresh draw happens on next entry.
+if is_flat
+    active_ticks := na
 
-// Exit logic - placed outside entry conditions for proper execution
-if strategy.position_size > 0
-    strategy.exit("Long Exit", "Long", stop=close * (1 - i_stopLossPerc/100), limit=close * (1 + i_takeProfitPerc/100))
+// ══════════════════════════════════════════════════════════════════════════════
+// ENTRY LOGIC
+// ══════════════════════════════════════════════════════════════════════════════
 
-if strategy.position_size < 0
-    strategy.exit("Short Exit", "Short", stop=close * (1 + i_stopLossPerc/100), limit=close * (1 - i_takeProfitPerc/100))
+can_long = enable_long and should_try_entry and rand_dir_long
+can_short = enable_short and should_try_entry and not rand_dir_long
+
+if is_flat and should_try_entry and not na(rand_ticks)
+    // Store the tick distance for this trade so exits remain constant while open.
+    active_ticks := rand_ticks
+    if can_long
+        strategy.entry("Long", strategy.long)
+    if can_short
+        strategy.entry("Short", strategy.short)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXIT LOGIC (1:1 R:R)
+// ══════════════════════════════════════════════════════════════════════════════
+
+has_ticks = not na(active_ticks)
+tick_distance = float(active_ticks) * syminfo.mintick
+
+if strategy.position_size > 0 and has_ticks
+    entry_price = strategy.position_avg_price
+    strategy.exit(
+        "Long Exit",
+        from_entry="Long",
+        stop=entry_price - tick_distance,
+        limit=entry_price + tick_distance
+    )
+
+if strategy.position_size < 0 and has_ticks
+    entry_price = strategy.position_avg_price
+    strategy.exit(
+        "Short Exit",
+        from_entry="Short",
+        stop=entry_price + tick_distance,
+        limit=entry_price - tick_distance
+    )
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PLOTTING
 // ══════════════════════════════════════════════════════════════════════════════
 
-plot(fastMA, "Fast MA", color=color.blue, linewidth=2)
-plot(slowMA, "Slow MA", color=color.red, linewidth=2)
-
-// Plot entry signals
-plotshape(longCondition, "Long Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
-plotshape(shortCondition, "Short Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
+plotshape(strategy.position_size > 0, title="Long Active", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.tiny)
+plotshape(strategy.position_size < 0, title="Short Active", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)
