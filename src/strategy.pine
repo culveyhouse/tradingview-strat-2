@@ -2,18 +2,17 @@
 // © tradingview-strat-2
 
 //@version=6
-strategy(
-    "Random Wait RR 1:1",
-    overlay=true,
-    pyramiding=0,
-    initial_capital=10000,
-    default_qty_type=strategy.percent_of_equity,
-    default_qty_value=10,
-    process_orders_on_close=true,
-    commission_type=strategy.commission.percent,
-    commission_value=0.0,
-    description="Takes one trade at a time after a random wait, flips a coin for direction, and uses a random 1:1 tick stop/limit."
-)
+//@description="Takes one trade at a time after a random wait, flips a coin for direction, and uses a random 1:1 tick stop/limit."
+
+strategy("Random Wait RR 1:1",
+  overlay=true,
+  pyramiding=0,
+  initial_capital=10000,
+  default_qty_type=strategy.percent_of_equity,
+  default_qty_value=10,
+  process_orders_on_close=true,
+  commission_type=strategy.commission.percent,
+  commission_value=0.0)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INPUTS
