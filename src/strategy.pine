@@ -144,7 +144,7 @@ wait_text = locked_window ? "Locked (trade open)" : na(wait_remaining_min) ? "n/
 stop_price_live = long_active and not na(active_tick_distance) ? strategy.position_avg_price - active_tick_distance * syminfo.mintick :
   short_active and not na(active_tick_distance) ? strategy.position_avg_price + active_tick_distance * syminfo.mintick :
   na
-close_vs_stop_text := na(stop_price_live) ? "n/a" : str.tostring(close > stop_price_live)
+close_vs_stop_text = na(stop_price_live) ? "n/a" : str.tostring(close > stop_price_live)
 ticks_to_stop = not na(stop_price_live) ? math.abs((close - stop_price_live) / syminfo.mintick) : na
 live_tick_text = na(ticks_to_stop) ? "n/a" : str.tostring(math.round(ticks_to_stop, 2))
 
