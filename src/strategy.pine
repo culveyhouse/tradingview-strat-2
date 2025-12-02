@@ -54,15 +54,15 @@ rand_ticks = math.round(rand_ticks_raw)
 
 // Guarantee at least one attempt on the first visible bar so the strategy produces trades even on short chart windows.
 should_try_entry = rand_float(rand_seed_chance) <= probability_per_bar
-force_first_entry = barstate.isfirst and is_flat
-should_enter = (should_try_entry or force_first_entry) and is_flat and not na(rand_ticks)
+force_first_entry = barstate.isfirst
+should_enter = is_flat and not na(rand_ticks) and (should_try_entry or force_first_entry)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRY LOGIC
 // ══════════════════════════════════════════════════════════════════════════════
 
-can_long = enable_long and rand_dir_long
-can_short = enable_short and not rand_dir_long
+can_long = enable_long and (rand_dir_long or not enable_short)
+can_short = enable_short and (not rand_dir_long or not enable_long)
 
 if should_enter
     // Store the tick distance for this trade so exits remain constant while open.
