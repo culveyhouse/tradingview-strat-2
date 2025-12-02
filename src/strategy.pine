@@ -27,7 +27,7 @@ max_ticks_clean = math.max(min_ticks_clean, max_ticks)
 // ══════════════════════════════════════════════════════════════════════════════
 
 // Pseudo-random number generator based on bar_index for reproducibility.
-rand_float(src) => math.frac(math.sin(src) * 43758.5453)
+rand_float(src) => math.fract(math.sin(src) * 43758.5453)
 rand_between(min_val, max_val, src) => min_val + rand_float(src) * (max_val - min_val)
 
 // Sources for random draws per bar.
@@ -75,21 +75,11 @@ tick_distance = float(active_ticks) * syminfo.mintick
 
 if strategy.position_size > 0 and has_ticks
     entry_price = strategy.position_avg_price
-    strategy.exit(
-        "Long Exit",
-        from_entry="Long",
-        stop=entry_price - tick_distance,
-        limit=entry_price + tick_distance
-    )
+    strategy.exit("Long Exit", from_entry="Long", stop=entry_price - tick_distance, limit=entry_price + tick_distance)
 
 if strategy.position_size < 0 and has_ticks
     entry_price = strategy.position_avg_price
-    strategy.exit(
-        "Short Exit",
-        from_entry="Short",
-        stop=entry_price + tick_distance,
-        limit=entry_price - tick_distance
-    )
+    strategy.exit("Short Exit", from_entry="Short", stop=entry_price + tick_distance, limit=entry_price - tick_distance)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PLOTTING
