@@ -2,63 +2,114 @@
 // © tradingview-strat-2
 
 //@version=6
-strategy("My Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+// Dumb random-timing strategy: waits a random window, flips a coin for direction, and trades with a 1:1 tick-based stop/target.
+strategy(
+    "Random Wait 1:1 Strategy",
+    overlay=true,
+    initial_capital=10000,
+    default_qty_type=strategy.percent_of_equity,
+    default_qty_value=10,
+    commission_type=strategy.commission.percent,
+    commission_value=0.0
+)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INPUTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Strategy Parameters
-i_enableLong = input.bool(true, "Enable Long Positions", group="Strategy Settings")
-i_enableShort = input.bool(true, "Enable Short Positions", group="Strategy Settings")
+// Trade Direction
+allow_long = input.bool(true, "Allow Long Trades", group="Direction")
+allow_short = input.bool(true, "Allow Short Trades", group="Direction")
+position_size_percent = input.float(10.0, "Position Size % of Equity", minval=0.1, maxval=100, group="Direction")
 
-// Indicator Parameters
-i_fastLength = input.int(10, "Fast MA Length", minval=1, group="Indicator Settings")
-i_slowLength = input.int(20, "Slow MA Length", minval=1, group="Indicator Settings")
+// Timing
+t_min_wait = input.int(5, "Minimum Wait (minutes)", minval=1, group="Random Timing")
+t_max_wait = input.int(60, "Maximum Wait (minutes)", minval=1, group="Random Timing")
 
-// Risk Management
-i_stopLossPerc = input.float(2.0, "Stop Loss %", minval=0.1, step=0.1, group="Risk Management")
-i_takeProfitPerc = input.float(4.0, "Take Profit %", minval=0.1, step=0.1, group="Risk Management")
-
-// ══════════════════════════════════════════════════════════════════════════════
-// INDICATORS
-// ══════════════════════════════════════════════════════════════════════════════
-
-fastMA = ta.sma(close, i_fastLength)
-slowMA = ta.sma(close, i_slowLength)
+// Risk
+r_min_ticks = input.int(20, "Minimum Tick Distance", minval=1, group="Risk")
+r_max_ticks = input.int(50, "Maximum Tick Distance", minval=1, group="Risk")
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SIGNALS
+// HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
-longCondition = ta.crossover(fastMA, slowMA)
-shortCondition = ta.crossunder(fastMA, slowMA)
+var int next_trade_time_ms = na
+var float active_tick_distance = na
+var bool active_is_long = na
+var string active_entry_id = ""
+var bool prev_position_open = false
 
-// ══════════════════════════════════════════════════════════════════════════════
-// STRATEGY EXECUTION
-// ══════════════════════════════════════════════════════════════════════════════
+f_clamped_range(_min, _max) =>
+    [math.min(_min, _max), math.max(_min, _max)]
 
-// Entry logic
-if longCondition and i_enableLong
-    strategy.entry("Long", strategy.long)
+f_random_wait_ms() =>
+    [actual_min, actual_max] = f_clamped_range(t_min_wait, t_max_wait)
+    chosen_wait = math.round(math.rand(float(actual_min), float(actual_max)))
+    int(chosen_wait * 60 * 1000)
 
-if shortCondition and i_enableShort
-    strategy.entry("Short", strategy.short)
+f_random_tick_distance() =>
+    [actual_min_ticks, actual_max_ticks] = f_clamped_range(r_min_ticks, r_max_ticks)
+    chosen_ticks = math.max(1, math.round(math.rand(float(actual_min_ticks), float(actual_max_ticks))))
+    chosen_ticks * syminfo.mintick
 
-// Exit logic - placed outside entry conditions for proper execution
-if strategy.position_size > 0
-    strategy.exit("Long Exit", "Long", stop=close * (1 - i_stopLossPerc/100), limit=close * (1 + i_takeProfitPerc/100))
+f_schedule_next_trade() =>
+    next_trade_time_ms := time + f_random_wait_ms()
 
-if strategy.position_size < 0
-    strategy.exit("Short Exit", "Short", stop=close * (1 + i_stopLossPerc/100), limit=close * (1 - i_takeProfitPerc/100))
+f_set_active_trade(_is_long, _tick_distance, _entry_id) =>
+    active_is_long := _is_long
+    active_tick_distance := _tick_distance
+    active_entry_id := _entry_id
+
+// Initialize the first wait window on the first bar when flat
+if strategy.position_size == 0 and na(next_trade_time_ms)
+    f_schedule_next_trade()
+
+position_open = strategy.position_size != 0
+
+// Handle transition from open position to flat and reset active trade context
+if not position_open and prev_position_open
+    active_tick_distance := na
+    active_is_long := na
+    active_entry_id := ""
+    f_schedule_next_trade()
+
+// Trade trigger logic when waiting period has elapsed
+can_trade = allow_long or allow_short
+is_wait_over = not na(next_trade_time_ms) and time >= next_trade_time_ms
+
+if not position_open and is_wait_over and can_trade
+    choose_long = math.rand(0.0, 1.0) >= 0.5
+    choose_long := allow_long and allow_short ? choose_long : allow_long and not allow_short
+    choose_short = not choose_long
+
+    if (choose_long and allow_long) or (choose_short and allow_short)
+        tick_distance = f_random_tick_distance()
+
+        if choose_long
+            f_set_active_trade(true, tick_distance, "Long")
+            strategy.entry("Long", strategy.long, qty_percent=position_size_percent)
+        else
+            f_set_active_trade(false, tick_distance, "Short")
+            strategy.entry("Short", strategy.short, qty_percent=position_size_percent)
+
+        next_trade_time_ms := na
+
+// Exit management using the stored tick distance for the active trade
+if position_open and not na(active_tick_distance) and not na(active_is_long)
+    stop_price = active_is_long ? strategy.position_avg_price - active_tick_distance : strategy.position_avg_price + active_tick_distance
+    limit_price = active_is_long ? strategy.position_avg_price + active_tick_distance : strategy.position_avg_price - active_tick_distance
+    exit_id = active_is_long ? "Long Exit" : "Short Exit"
+    strategy.exit(exit_id, from_entry=active_entry_id, stop=stop_price, limit=limit_price)
+
+prev_position_open := position_open
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PLOTTING
 // ══════════════════════════════════════════════════════════════════════════════
 
-plot(fastMA, "Fast MA", color=color.blue, linewidth=2)
-plot(slowMA, "Slow MA", color=color.red, linewidth=2)
+var color long_color = color.new(color.green, 0)
+var color short_color = color.new(color.red, 0)
 
-// Plot entry signals
-plotshape(longCondition, "Long Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
-plotshape(shortCondition, "Short Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
+plotshape(strategy.opentrades == 1 and active_is_long, title="Active Long", location=location.belowbar, color=long_color, style=shape.triangleup, size=size.tiny, text="Long")
+plotshape(strategy.opentrades == 1 and not active_is_long, title="Active Short", location=location.abovebar, color=short_color, style=shape.triangledown, size=size.tiny, text="Short")
